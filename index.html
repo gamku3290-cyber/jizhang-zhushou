@@ -48,18 +48,34 @@ body {
   top: 0;
   z-index: 100;
   background: var(--card);
-  padding: 12px 16px;
+  padding: 10px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
 }
 
+.header-left { display: flex; flex-direction: column; gap: 0; }
+
 .header h1 {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.3px;
 }
+
+.book-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: opacity 0.2s;
+}
+.book-badge:active { opacity: 0.7; }
+.book-badge svg { width: 13px; height: 13px; }
 
 .header-right {
   display: flex;
@@ -452,6 +468,92 @@ body {
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 
+/* Book Management in Settings */
+.book-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.book-list-item:last-child { border-bottom: none; }
+
+.book-list-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.book-list-name {
+  font-size: 15px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.book-list-name .active-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--income);
+  display: inline-block;
+}
+.book-list-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.book-list-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.book-action-btn {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--tag-bg);
+  color: var(--text);
+}
+.book-action-btn:active { opacity: 0.7; transform: scale(0.95); }
+.book-action-btn.primary-action { background: var(--accent); color: #fff; }
+.book-action-btn.danger-action { background: #ffe5e5; color: var(--danger); }
+
+.book-create-row {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  align-items: center;
+}
+
+.book-create-row input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  background: var(--input-bg);
+  outline: none;
+  font-family: inherit;
+}
+.book-create-row input:focus { border-color: var(--accent); }
+
+.book-create-row button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.book-create-row button:active { opacity: 0.7; }
+
 /* Toast */
 .toast {
   position: fixed;
@@ -490,6 +592,8 @@ body {
   max-width: 500px;
   padding: 20px 16px 30px;
   animation: slideUp 0.3s ease;
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -522,7 +626,13 @@ body {
 
 <!-- Header -->
 <div class="header">
-  <h1 id="app-title">Expense Tracker</h1>
+  <div class="header-left">
+    <h1 id="app-title">Expense Tracker</h1>
+    <span class="book-badge" id="book-badge" onclick="switchPage('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      <span id="book-badge-name">默认账本</span>
+    </span>
+  </div>
   <div class="header-right">
     <button class="lang-btn" id="langToggle" onclick="toggleLang()">中文</button>
   </div>
@@ -567,11 +677,10 @@ body {
 
 <script>
 // ===================== DATA LAYER =====================
-const STORAGE_KEY = 'expense_tracker_data';
-const SETTINGS_KEY = 'expense_tracker_settings';
+const STORAGE_KEY_V2 = 'expense_tracker_v2';
 const LANG_KEY = 'expense_tracker_lang';
 
-// Safe localStorage wrapper: falls back to in-memory when blocked (e.g. Telegram WebView)
+// Safe localStorage wrapper
 const safeStorage = (() => {
   try {
     const test = '__test__';
@@ -593,31 +702,83 @@ const safeStorage = (() => {
   }
 })();
 
-function loadData() {
+// ---- Book data structure ----
+// { books: [{ id, name, records: [], settings: { monthlyBudget: 5000 } }], activeBookId: 'xxx' }
+
+function generateId() { return 'bk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7); }
+function generateRecordId() { return Date.now(); }
+
+function loadAllData() {
   try {
-    const raw = safeStorage.get(STORAGE_KEY, null);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
+    const raw = safeStorage.get(STORAGE_KEY_V2, null);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data.books && Array.isArray(data.books) && data.books.length > 0) {
+        return data;
+      }
+    }
+  } catch(e) {}
 
-function saveData(data) {
-  safeStorage.set(STORAGE_KEY, JSON.stringify(data));
-}
-
-function loadSettings() {
+  // Migration from old format
+  const oldRaw = safeStorage.get('expense_tracker_data', null);
+  const oldSettingsRaw = safeStorage.get('expense_tracker_settings', null);
+  let oldRecords = [];
+  let oldSettings = { monthlyBudget: 5000 };
   try {
-    const raw = safeStorage.get(SETTINGS_KEY, null);
-    return raw ? JSON.parse(raw) : { monthlyBudget: 5000 };
-  } catch { return { monthlyBudget: 5000 }; }
+    if (oldRaw) {
+      const parsed = JSON.parse(oldRaw);
+      if (Array.isArray(parsed)) oldRecords = parsed;
+    }
+  } catch(e) {}
+  try {
+    if (oldSettingsRaw) {
+      const parsed = JSON.parse(oldSettingsRaw);
+      if (parsed && typeof parsed === 'object') oldSettings = parsed;
+    }
+  } catch(e) {}
+
+  const defaultBook = {
+    id: generateId(),
+    name: t('defaultBookName'),
+    records: oldRecords,
+    settings: { monthlyBudget: oldSettings.monthlyBudget || 5000 }
+  };
+
+  return { books: [defaultBook], activeBookId: defaultBook.id };
 }
 
-function saveSettings(s) {
-  safeStorage.set(SETTINGS_KEY, JSON.stringify(s));
+function saveAllData(data) {
+  safeStorage.set(STORAGE_KEY_V2, JSON.stringify(data));
 }
 
-let records = loadData();
-let settings = loadSettings();
 let currentLang = safeStorage.get(LANG_KEY, 'en');
+let appData = loadAllData();
+
+function getActiveBook() {
+  const book = appData.books.find(b => b.id === appData.activeBookId);
+  if (!book && appData.books.length > 0) {
+    appData.activeBookId = appData.books[0].id;
+    saveAllData(appData);
+    return appData.books[0];
+  }
+  if (appData.books.length === 0) {
+    const newBook = { id: generateId(), name: t('defaultBookName'), records: [], settings: { monthlyBudget: 5000 } };
+    appData.books = [newBook];
+    appData.activeBookId = newBook.id;
+    saveAllData(appData);
+    return newBook;
+  }
+  return book;
+}
+
+function saveActiveBook(book) {
+  const idx = appData.books.findIndex(b => b.id === book.id);
+  if (idx !== -1) {
+    appData.books[idx] = book;
+    saveAllData(appData);
+  }
+}
+
 let currentType = 'expense';
 let currentPage = 'dashboard';
 
@@ -695,6 +856,25 @@ const i18n = {
     budgetSaved: 'Budget saved!',
     invalidImport: 'Invalid import file!',
     enterValidAmount: 'Please enter a valid amount',
+    // Book management
+    bookManagement: 'Account Books',
+    defaultBookName: 'Default Book',
+    currentBook: 'Current Book',
+    manageBooks: 'Manage Books',
+    createBook: 'Create Book',
+    newBookName: 'New book name',
+    bookNamePlaceholder: 'e.g. Personal, Family, Business',
+    switchTo: 'Switch',
+    rename: 'Rename',
+    deleteBook: 'Delete Book',
+    deleteBookConfirm: 'Delete account book "{name}" and all its {count} records? This cannot be undone.',
+    bookSwitched: 'Switched to "{name}"',
+    bookCreated: 'Book "{name}" created!',
+    bookRenamed: 'Book renamed to "{name}"',
+    bookDeleted: 'Book "{name}" deleted',
+    cantDeleteLastBook: 'Cannot delete the only account book',
+    bookRenamePrompt: 'Enter new name:',
+    // Categories
     categories: {
       food: 'Food & Dining', transport: 'Transportation', shopping: 'Shopping',
       housing: 'Housing', utilities: 'Utilities', healthcare: 'Healthcare',
@@ -752,6 +932,25 @@ const i18n = {
     budgetSaved: '预算已保存！',
     invalidImport: '导入文件无效！',
     enterValidAmount: '请输入有效金额',
+    // Book management
+    bookManagement: '账本管理',
+    defaultBookName: '默认账本',
+    currentBook: '当前账本',
+    manageBooks: '管理账本',
+    createBook: '新建账本',
+    newBookName: '新账本名称',
+    bookNamePlaceholder: '例如：个人、家庭、生意',
+    switchTo: '切换',
+    rename: '重命名',
+    deleteBook: '删除账本',
+    deleteBookConfirm: '确定要删除账本「{name}」及其全部 {count} 条记录吗？此操作不可撤销。',
+    bookSwitched: '已切换到「{name}」',
+    bookCreated: '账本「{name}」已创建！',
+    bookRenamed: '已重命名为「{name}」',
+    bookDeleted: '账本「{name}」已删除',
+    cantDeleteLastBook: '无法删除唯一的账本',
+    bookRenamePrompt: '请输入新名称：',
+    // Categories
     categories: {
       food: '餐饮美食', transport: '交通出行', shopping: '购物消费',
       housing: '住房租金', utilities: '水电燃气', healthcare: '医疗健康',
@@ -770,6 +969,16 @@ function t(key) {
     val = val?.[k];
   }
   return val ?? key;
+}
+
+function tt(key, replacements) {
+  let str = t(key);
+  if (replacements) {
+    Object.entries(replacements).forEach(([k, v]) => {
+      str = str.replace(`{${k}}`, v);
+    });
+  }
+  return str;
 }
 
 function toggleLang() {
@@ -795,7 +1004,7 @@ function getMonthRange(offset = 0) {
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }
 
-function getRecordsInMonth(offset = 0) {
+function getRecordsInMonth(records, offset = 0) {
   const { start, end } = getMonthRange(offset);
   return records.filter(r => r.date >= start && r.date <= end);
 }
@@ -814,7 +1023,7 @@ function showToast(msg) {
   setTimeout(() => el.remove(), 2000);
 }
 
-function showModal(title, message, onConfirm) {
+function showModal(title, message, onConfirm, confirmLabel) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -823,7 +1032,7 @@ function showModal(title, message, onConfirm) {
       <p style="text-align:center;color:var(--text-secondary);font-size:14px;line-height:1.5;">${message}</p>
       <div class="modal-actions">
         <button class="modal-cancel" id="modal-cancel">${t('cancel')}</button>
-        <button class="modal-confirm" id="modal-confirm">${t('delete')}</button>
+        <button class="modal-confirm" id="modal-confirm">${confirmLabel || t('delete')}</button>
       </div>
     </div>
   `;
@@ -835,7 +1044,9 @@ function showModal(title, message, onConfirm) {
 
 // ===================== RENDER =====================
 function renderAll() {
+  const book = getActiveBook();
   document.getElementById('app-title').textContent = t('title');
+  document.getElementById('book-badge-name').textContent = book ? book.name : '';
   document.getElementById('tab-dashboard').textContent = t('dashboard');
   document.getElementById('tab-add').textContent = t('add');
   document.getElementById('tab-history').textContent = t('history');
@@ -848,10 +1059,12 @@ function renderAll() {
 
 function renderDashboard() {
   const el = document.getElementById('page-dashboard');
-  const monthRecords = getRecordsInMonth(0);
+  const book = getActiveBook();
+  if (!book) return;
+  const monthRecords = getRecordsInMonth(book.records, 0);
   const totalExpense = monthRecords.filter(r => r.type === 'expense').reduce((s, r) => s + r.amount, 0);
   const totalIncome = monthRecords.filter(r => r.type === 'income').reduce((s, r) => s + r.amount, 0);
-  const budget = settings.monthlyBudget || 5000;
+  const budget = book.settings.monthlyBudget || 5000;
   const percent = budget > 0 ? Math.min((totalExpense / budget) * 100, 100) : 0;
   const overPercent = budget > 0 ? Math.max(((totalExpense - budget) / budget) * 100, 0) : 0;
   const isOver = totalExpense > budget;
@@ -1005,6 +1218,8 @@ function renderHistory(filterType) {
   if (!filterType) filterType = el._lastFilter || 'all';
   el._lastFilter = filterType;
 
+  const book = getActiveBook();
+
   let html = `
     <div class="history-filters">
       <div class="filter-chip ${filterType === 'all' ? 'active' : ''}" onclick="renderHistory('all')">${t('all')}</div>
@@ -1015,7 +1230,7 @@ function renderHistory(filterType) {
     </div>
   `;
 
-  let filtered = [...records];
+  let filtered = [...(book ? book.records : [])];
   if (filterType === 'expense') filtered = filtered.filter(r => r.type === 'expense');
   if (filterType === 'income') filtered = filtered.filter(r => r.type === 'income');
   if (filterType === 'thismonth') {
@@ -1062,15 +1277,47 @@ function renderHistory(filterType) {
 
 function renderSettings() {
   const el = document.getElementById('page-settings');
+  const book = getActiveBook();
+
+  // Book management section
+  let booksHtml = '';
+  appData.books.forEach(b => {
+    const isActive = b.id === appData.activeBookId;
+    booksHtml += `
+      <div class="book-list-item">
+        <div class="book-list-info">
+          <span class="book-list-name">
+            ${isActive ? '<span class="active-dot"></span>' : ''}
+            ${escapeHtml(b.name)}
+          </span>
+          <span class="book-list-count">${b.records.length} ${currentLang === 'zh' ? '条记录' : 'records'}</span>
+        </div>
+        <div class="book-list-actions">
+          ${!isActive ? `<button class="book-action-btn primary-action" onclick="switchBook('${b.id}')">${t('switchTo')}</button>` : ''}
+          <button class="book-action-btn" onclick="renameBook('${b.id}')">${t('rename')}</button>
+          ${appData.books.length > 1 ? `<button class="book-action-btn danger-action" onclick="deleteBook('${b.id}')">${t('deleteBook')}</button>` : ''}
+        </div>
+      </div>`;
+  });
+
   el.innerHTML = `
-    <div class="section-title">${t('budgetTitle')}</div>
+    <div class="section-title">${t('bookManagement')}</div>
+    <div class="settings-section">
+      ${booksHtml}
+      <div class="book-create-row">
+        <input type="text" id="new-book-name" placeholder="${t('bookNamePlaceholder')}" maxlength="20">
+        <button onclick="createBook()">+ ${t('createBook')}</button>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:20px;">${t('budgetTitle')}</div>
     <div class="settings-section">
       <div class="settings-item">
         <div>
           <div class="settings-label">${t('budgetLabel')}</div>
           <div class="settings-desc">${t('budgetDesc')}</div>
         </div>
-        <input type="number" id="settings-budget" value="${settings.monthlyBudget}" step="100" min="0">
+        <input type="number" id="settings-budget" value="${book.settings.monthlyBudget}" step="100" min="0">
       </div>
     </div>
     <button class="settings-btn btn-primary" onclick="saveBudget()">💾 ${t('save')}</button>
@@ -1080,14 +1327,14 @@ function renderSettings() {
       <div class="settings-item" style="cursor:pointer;" onclick="exportData()">
         <div>
           <div class="settings-label">📤 ${t('exportData')}</div>
-          <div class="settings-desc">${currentLang === 'zh' ? '备份所有记录到 JSON 文件' : 'Backup all records to JSON file'}</div>
+          <div class="settings-desc">${currentLang === 'zh' ? '备份所有账本到 JSON 文件' : 'Backup all books to JSON file'}</div>
         </div>
         <span style="color:var(--accent);font-size:13px;">→</span>
       </div>
       <div class="settings-item" style="cursor:pointer;" onclick="document.getElementById('import-file').click()">
         <div>
           <div class="settings-label">📥 ${t('importData')}</div>
-          <div class="settings-desc">${currentLang === 'zh' ? '从 JSON 文件恢复记录' : 'Restore records from JSON file'}</div>
+          <div class="settings-desc">${currentLang === 'zh' ? '从 JSON 文件恢复所有账本' : 'Restore books from JSON file'}</div>
         </div>
         <span style="color:var(--accent);font-size:13px;">→</span>
       </div>
@@ -1095,6 +1342,12 @@ function renderSettings() {
     <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
     <button class="settings-btn btn-danger" onclick="clearAllData()">🗑 ${t('clearData')}</button>
   `;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 // ===================== ACTIONS =====================
@@ -1127,7 +1380,7 @@ function addRecord() {
   }
 
   const record = {
-    id: Date.now(),
+    id: generateRecordId(),
     type: currentType,
     amount: Number(Number(amountStr).toFixed(2)),
     category,
@@ -1136,8 +1389,9 @@ function addRecord() {
     createdAt: Date.now(),
   };
 
-  records.unshift(record);
-  saveData(records);
+  const book = getActiveBook();
+  book.records.unshift(record);
+  saveActiveBook(book);
   showToast(t('recordAdded'));
 
   document.getElementById('input-amount').value = '';
@@ -1148,20 +1402,83 @@ function addRecord() {
 
 function deleteRecordById(id, event) {
   event.stopPropagation();
-  const idx = records.findIndex(r => r.id === id);
+  const book = getActiveBook();
+  const idx = book.records.findIndex(r => r.id === id);
   if (idx === -1) return;
 
   showModal(t('confirmDelete'), t('confirmDeleteMsg'), () => {
-    records.splice(idx, 1);
-    saveData(records);
+    book.records.splice(idx, 1);
+    saveActiveBook(book);
     showToast(t('recordDeleted'));
     renderHistory();
     renderDashboard();
   });
 }
 
+// ---- Book Management ----
+function switchBook(bookId) {
+  const book = appData.books.find(b => b.id === bookId);
+  if (!book) return;
+  appData.activeBookId = bookId;
+  saveAllData(appData);
+  showToast(tt('bookSwitched', { name: book.name }));
+  renderAll();
+}
+
+function createBook() {
+  const input = document.getElementById('new-book-name');
+  const name = input.value.trim();
+  if (!name) {
+    showToast(t('enterValidAmount'));
+    return;
+  }
+  const newBook = {
+    id: generateId(),
+    name: name,
+    records: [],
+    settings: { monthlyBudget: 5000 }
+  };
+  appData.books.push(newBook);
+  appData.activeBookId = newBook.id;
+  saveAllData(appData);
+  showToast(tt('bookCreated', { name: name }));
+  renderAll();
+}
+
+function renameBook(bookId) {
+  const book = appData.books.find(b => b.id === bookId);
+  if (!book) return;
+  const newName = prompt(t('bookRenamePrompt'), book.name);
+  if (newName && newName.trim() && newName.trim() !== book.name) {
+    book.name = newName.trim();
+    saveAllData(appData);
+    showToast(tt('bookRenamed', { name: book.name }));
+    renderAll();
+  }
+}
+
+function deleteBook(bookId) {
+  if (appData.books.length <= 1) {
+    showToast(t('cantDeleteLastBook'));
+    return;
+  }
+  const book = appData.books.find(b => b.id === bookId);
+  if (!book) return;
+
+  const msg = tt('deleteBookConfirm', { name: book.name, count: book.records.length });
+  showModal(t('deleteBook'), msg, () => {
+    appData.books = appData.books.filter(b => b.id !== bookId);
+    if (appData.activeBookId === bookId) {
+      appData.activeBookId = appData.books[0].id;
+    }
+    saveAllData(appData);
+    showToast(tt('bookDeleted', { name: book.name }));
+    renderAll();
+  }, t('delete'));
+}
+
 function exportData() {
-  const blob = new Blob([JSON.stringify({ records, settings, exportDate: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ books: appData.books, activeBookId: appData.activeBookId, exportDate: new Date().toISOString() }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1178,11 +1495,18 @@ function importData(event) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      if (!data.records || !Array.isArray(data.records)) throw new Error('Invalid format');
-      records = data.records;
-      if (data.settings) settings = data.settings;
-      saveData(records);
-      saveSettings(settings);
+      if (!data.books || !Array.isArray(data.books) || data.books.length === 0) throw new Error('Invalid format');
+      // Validate books structure
+      data.books.forEach(b => {
+        if (!b.id || !b.name || !Array.isArray(b.records)) throw new Error('Invalid book format');
+      });
+      appData = {
+        books: data.books,
+        activeBookId: data.activeBookId && data.books.find(b => b.id === data.activeBookId)
+          ? data.activeBookId
+          : data.books[0].id
+      };
+      saveAllData(appData);
       showToast(t('dataImported'));
       renderAll();
     } catch {
@@ -1195,8 +1519,9 @@ function importData(event) {
 
 function clearAllData() {
   showModal(t('clearData'), t('clearConfirm'), () => {
-    records = [];
-    saveData(records);
+    const defaultBook = { id: generateId(), name: t('defaultBookName'), records: [], settings: { monthlyBudget: 5000 } };
+    appData = { books: [defaultBook], activeBookId: defaultBook.id };
+    saveAllData(appData);
     showToast(t('dataCleared'));
     renderAll();
   });
@@ -1208,8 +1533,9 @@ function saveBudget() {
     showToast(t('enterValidAmount'));
     return;
   }
-  settings.monthlyBudget = val;
-  saveSettings(settings);
+  const book = getActiveBook();
+  book.settings.monthlyBudget = val;
+  saveActiveBook(book);
   showToast(t('budgetSaved'));
   renderDashboard();
 }
@@ -1219,7 +1545,7 @@ document.documentElement.lang = currentLang === 'en' ? 'en' : 'zh-CN';
 document.getElementById('langToggle').textContent = currentLang === 'en' ? '中文' : 'English';
 renderAll();
 
-// Notify if storage is unavailable (e.g. Telegram in-app browser)
+// Notify if storage is unavailable
 if (!safeStorage.available) {
   setTimeout(() => {
     showToast(currentLang === 'en'
