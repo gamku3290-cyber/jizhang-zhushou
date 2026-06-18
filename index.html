@@ -752,59 +752,6 @@ function saveAllData(data) {
 }
 
 let currentLang = safeStorage.get(LANG_KEY, 'en');
-let appData = loadAllData();
-
-function getActiveBook() {
-  const book = appData.books.find(b => b.id === appData.activeBookId);
-  if (!book && appData.books.length > 0) {
-    appData.activeBookId = appData.books[0].id;
-    saveAllData(appData);
-    return appData.books[0];
-  }
-  if (appData.books.length === 0) {
-    const newBook = { id: generateId(), name: t('defaultBookName'), records: [], settings: { monthlyBudget: 5000 } };
-    appData.books = [newBook];
-    appData.activeBookId = newBook.id;
-    saveAllData(appData);
-    return newBook;
-  }
-  return book;
-}
-
-function saveActiveBook(book) {
-  const idx = appData.books.findIndex(b => b.id === book.id);
-  if (idx !== -1) {
-    appData.books[idx] = book;
-    saveAllData(appData);
-  }
-}
-
-let currentType = 'expense';
-let currentPage = 'dashboard';
-
-// ===================== CATEGORIES =====================
-const categories = {
-  expense: [
-    { id: 'food', emoji: '🍔' },
-    { id: 'transport', emoji: '🚗' },
-    { id: 'shopping', emoji: '🛍️' },
-    { id: 'housing', emoji: '🏠' },
-    { id: 'utilities', emoji: '💡' },
-    { id: 'healthcare', emoji: '🏥' },
-    { id: 'education', emoji: '📚' },
-    { id: 'entertainment', emoji: '🎬' },
-    { id: 'digital', emoji: '📱' },
-    { id: 'other_expense', emoji: '💸' },
-  ],
-  income: [
-    { id: 'salary', emoji: '💰' },
-    { id: 'freelance', emoji: '💻' },
-    { id: 'investment', emoji: '📈' },
-    { id: 'bonus', emoji: '🎁' },
-    { id: 'refund', emoji: '↩️' },
-    { id: 'other_income', emoji: '💵' },
-  ]
-};
 
 // ===================== i18n =====================
 const i18n = {
@@ -960,6 +907,59 @@ const i18n = {
     },
     notePlaceholder: '例如：和朋友聚餐',
   }
+};
+let appData = loadAllData();
+
+function getActiveBook() {
+  const book = appData.books.find(b => b.id === appData.activeBookId);
+  if (!book && appData.books.length > 0) {
+    appData.activeBookId = appData.books[0].id;
+    saveAllData(appData);
+    return appData.books[0];
+  }
+  if (appData.books.length === 0) {
+    const newBook = { id: generateId(), name: t('defaultBookName'), records: [], settings: { monthlyBudget: 5000 } };
+    appData.books = [newBook];
+    appData.activeBookId = newBook.id;
+    saveAllData(appData);
+    return newBook;
+  }
+  return book;
+}
+
+function saveActiveBook(book) {
+  const idx = appData.books.findIndex(b => b.id === book.id);
+  if (idx !== -1) {
+    appData.books[idx] = book;
+    saveAllData(appData);
+  }
+}
+
+let currentType = 'expense';
+let currentPage = 'dashboard';
+
+// ===================== CATEGORIES =====================
+const categories = {
+  expense: [
+    { id: 'food', emoji: '🍔' },
+    { id: 'transport', emoji: '🚗' },
+    { id: 'shopping', emoji: '🛍️' },
+    { id: 'housing', emoji: '🏠' },
+    { id: 'utilities', emoji: '💡' },
+    { id: 'healthcare', emoji: '🏥' },
+    { id: 'education', emoji: '📚' },
+    { id: 'entertainment', emoji: '🎬' },
+    { id: 'digital', emoji: '📱' },
+    { id: 'other_expense', emoji: '💸' },
+  ],
+  income: [
+    { id: 'salary', emoji: '💰' },
+    { id: 'freelance', emoji: '💻' },
+    { id: 'investment', emoji: '📈' },
+    { id: 'bonus', emoji: '🎁' },
+    { id: 'refund', emoji: '↩️' },
+    { id: 'other_income', emoji: '💵' },
+  ]
 };
 
 function t(key) {
